@@ -32,5 +32,3 @@ ipykernel>=6.25.0
 
 # Utilities
 tqdm>=4.65.0
-
-# Note: Pour installer correctement, suivez INSTALLATION.md dans l'ordre!
