@@ -1,0 +1,26 @@
+
+
+================================================================================
+KEY FINDINGS FOR ARTICLE
+================================================================================
+
+1. FUZZY LOGIC CONTRIBUTION: +1.36%
+   - Full Fuzzy-GraphSMOTE: 93.81%
+   - Without Fuzzy (GraphSMOTE): 92.45%
+   - Fuzzy membership labels improve classification significantly
+
+2. GRAPH STRUCTURE CONTRIBUTION: +1.60%
+   - Without graph structure → performance drops to 92.21%
+   - Graph topology is essential for synthetic node quality
+
+3. PRE-TRAINING CONTRIBUTION: +0.60%
+   - Pre-training edge generator improves edge quality
+   - Small but consistent improvement
+
+4. OPTIMAL HYPERPARAMETERS:
+   - θ = 0.7 (default) is optimal
+   - α = 1.0 (default) is near-optimal
+   - Small variations have limited impact
+
+CONCLUSION: Both fuzzy logic AND graph structure are essential.
+Removing either component significantly degrades performance.
