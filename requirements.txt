@@ -1,5 +1,5 @@
 # Fuzzy-GraphSMOTE Requirements
-# Compatible avec Python 3.11
+# Compatible avec Python 3.11.9
 
 # Core PyTorch (version 2.1.0 pour compatibilité avec torch-scatter)
 # Installation séparée recommandée - voir INSTALLATION.md

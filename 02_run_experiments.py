@@ -1,6 +1,7 @@
 """
-Main experiment script
-Compares Fuzzy-GraphSMOTE with baselines
+Main experiment script - SELECTED BASELINES
+11 methods: SMOTE, ADASYN, Borderline-SMOTE, Fuzzy-SMOTE, GraphSMOTE, 
+            GATSMOTE, GraphSR, ImGAGN, GraphMixup, GraphENS, Fuzzy-GraphSMOTE
 """
 
 import sys
@@ -17,9 +18,8 @@ from torch_geometric.data import Data
 
 from data_loader import load_cora, create_train_val_test_split
 from fuzzy_graphsmote import FuzzyGraphSMOTE
-from baselines import (VanillaGNN, GCN, SMOTE, FuzzySMOTE, GraphSMOTE,
-                       ADASYN, BorderlineSMOTE, RandomUnderSampling,
-                      ClassBalancedGNN, FocalLossGNN, ImGAGN)
+from baselines import (SMOTE, ADASYN, BorderlineSMOTE, FuzzySMOTE, GraphSMOTE,
+                      GATSMOTE, GraphSR, ImGAGN, GraphMixup, GraphENS, VanillaGNN)
 from evaluation import FuzzyMetrics, print_comparison_table, geometric_mean_score
 
 
@@ -33,74 +33,11 @@ def run_single_experiment(dataset_name, method, data, fuzzy_labels, crisp_labels
         print(f"{'='*80}")
     
     # ========================================================================
-    # BASIC GNN BASELINES
+    # SAMPLING-BASED METHODS (Non-graph)
     # ========================================================================
     
-    if method == 'vanilla_gnn':
-        model = VanillaGNN(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
-                          config['num_layers'], config['dropout'])
-        model.fit(data, fuzzy_labels, train_mask, val_mask, config['n_epochs'],
-                 config['lr'], config['weight_decay'], config['patience'], device, verbose)
-        fuzzy_pred, crisp_pred = model.predict(data, device)
-    
-    elif method == 'gcn':
-        model = GCN(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
-                   config['num_layers'], config['dropout'])
-        model.fit(data, fuzzy_labels, train_mask, val_mask, config['n_epochs'],
-                 config['lr'], config['weight_decay'], config['patience'], device, verbose)
-        fuzzy_pred, crisp_pred = model.predict(data, device)
-    
-    # ========================================================================
-    # LOSS-BASED METHODS
-    # ========================================================================
-    
-    elif method == 'class_balanced':
-        model = ClassBalancedGNN(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
-                                config['num_layers'], config['dropout'])
-        model.fit(data, fuzzy_labels, train_mask, val_mask, config['n_epochs'],
-                 config['lr'], config['weight_decay'], config['patience'], device, verbose)
-        fuzzy_pred, crisp_pred = model.predict(data, device)
-    
-    elif method == 'focal_loss':
-        model = FocalLossGNN(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
-                            config['num_layers'], config['dropout'])
-        model.fit(data, fuzzy_labels, train_mask, val_mask, config['n_epochs'],
-                 config['lr'], config['weight_decay'], config['patience'], device, verbose)
-        fuzzy_pred, crisp_pred = model.predict(data, device)
-    
-    # ========================================================================
-    # SAMPLING-BASED METHODS (NON-GRAPH)
-    # ========================================================================
-    
-    elif method == 'rus':
-        # Random Under-Sampling
-        rus_model = RandomUnderSampling()
-        X_train = data.x[train_mask].cpu().numpy()
-        y_train = crisp_labels[train_mask].cpu().numpy()
-        
-        X_resampled, y_resampled = rus_model.fit_resample(X_train, y_train)
-        
-        # Create pseudo-graph (no edges)
-        X_aug_torch = torch.FloatTensor(X_resampled)
-        y_aug_torch = torch.LongTensor(y_resampled)
-        
-        aug_data = Data(x=X_aug_torch, edge_index=torch.empty((2, 0), dtype=torch.long))
-        
-        # Train GNN on undersampled data
-        gnn_model = VanillaGNN(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
-                              config['num_layers'], config['dropout'])
-        
-        y_aug_onehot = F.one_hot(y_aug_torch, num_classes=fuzzy_labels.shape[1]).float()
-        
-        gnn_model.fit(aug_data, y_aug_onehot,
-                     torch.ones(len(X_resampled), dtype=torch.bool), None,
-                     config['n_epochs'], config['lr'], config['weight_decay'],
-                     config['patience'], device, verbose=False)
-        
-        fuzzy_pred, crisp_pred = gnn_model.predict(data, device)
-    
-    elif method == 'smote':
-        # Standard SMOTE
+    if method == 'smote':
+        # 1. SMOTE
         smote_model = SMOTE(k_neighbors=config['k_neighbors'], alpha=config['alpha'])
         X_train = data.x[train_mask].cpu().numpy()
         y_train = crisp_labels[train_mask].cpu().numpy()
@@ -109,22 +46,19 @@ def run_single_experiment(dataset_name, method, data, fuzzy_labels, crisp_labels
         
         X_aug_torch = torch.FloatTensor(X_resampled)
         y_aug_torch = torch.LongTensor(y_resampled)
-        
         aug_data = Data(x=X_aug_torch, edge_index=torch.empty((2, 0), dtype=torch.long))
         
         gnn_model = VanillaGNN(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
                               config['num_layers'], config['dropout'])
-        
         y_aug_onehot = F.one_hot(y_aug_torch, num_classes=fuzzy_labels.shape[1]).float()
         
-        gnn_model.fit(aug_data, y_aug_onehot,
-                     torch.ones(len(X_resampled), dtype=torch.bool), None,
-                     config['n_epochs'], config['lr'], config['weight_decay'],
+        gnn_model.fit(aug_data, y_aug_onehot, torch.ones(len(X_resampled), dtype=torch.bool),
+                     None, config['n_epochs'], config['lr'], config['weight_decay'],
                      config['patience'], device, verbose=False)
-        
         fuzzy_pred, crisp_pred = gnn_model.predict(data, device)
     
     elif method == 'adasyn':
+        # 2. ADASYN
         adasyn_model = ADASYN(k_neighbors=config['k_neighbors'], alpha=config['alpha'])
         X_train = data.x[train_mask].cpu().numpy()
         y_train = crisp_labels[train_mask].cpu().numpy()
@@ -133,22 +67,19 @@ def run_single_experiment(dataset_name, method, data, fuzzy_labels, crisp_labels
         
         X_aug_torch = torch.FloatTensor(X_resampled)
         y_aug_torch = torch.LongTensor(y_resampled)
-        
         aug_data = Data(x=X_aug_torch, edge_index=torch.empty((2, 0), dtype=torch.long))
         
         gnn_model = VanillaGNN(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
                               config['num_layers'], config['dropout'])
-        
         y_aug_onehot = F.one_hot(y_aug_torch, num_classes=fuzzy_labels.shape[1]).float()
         
-        gnn_model.fit(aug_data, y_aug_onehot,
-                     torch.ones(len(X_resampled), dtype=torch.bool), None,
-                     config['n_epochs'], config['lr'], config['weight_decay'],
+        gnn_model.fit(aug_data, y_aug_onehot, torch.ones(len(X_resampled), dtype=torch.bool),
+                     None, config['n_epochs'], config['lr'], config['weight_decay'],
                      config['patience'], device, verbose=False)
-        
         fuzzy_pred, crisp_pred = gnn_model.predict(data, device)
     
     elif method == 'borderline_smote':
+        # 3. Borderline-SMOTE
         borderline_model = BorderlineSMOTE(k_neighbors=config['k_neighbors'], alpha=config['alpha'])
         X_train = data.x[train_mask].cpu().numpy()
         y_train = crisp_labels[train_mask].cpu().numpy()
@@ -157,22 +88,19 @@ def run_single_experiment(dataset_name, method, data, fuzzy_labels, crisp_labels
         
         X_aug_torch = torch.FloatTensor(X_resampled)
         y_aug_torch = torch.LongTensor(y_resampled)
-        
         aug_data = Data(x=X_aug_torch, edge_index=torch.empty((2, 0), dtype=torch.long))
         
         gnn_model = VanillaGNN(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
                               config['num_layers'], config['dropout'])
-        
         y_aug_onehot = F.one_hot(y_aug_torch, num_classes=fuzzy_labels.shape[1]).float()
         
-        gnn_model.fit(aug_data, y_aug_onehot,
-                     torch.ones(len(X_resampled), dtype=torch.bool), None,
-                     config['n_epochs'], config['lr'], config['weight_decay'],
+        gnn_model.fit(aug_data, y_aug_onehot, torch.ones(len(X_resampled), dtype=torch.bool),
+                     None, config['n_epochs'], config['lr'], config['weight_decay'],
                      config['patience'], device, verbose=False)
-        
         fuzzy_pred, crisp_pred = gnn_model.predict(data, device)
     
     elif method == 'fuzzy_smote':
+        # 4. Fuzzy-SMOTE
         fuzzy_smote_model = FuzzySMOTE(k_neighbors=config['k_neighbors'],
                                        alpha=config['alpha'], theta=config['theta'])
         X_train = data.x[train_mask].cpu().numpy()
@@ -182,17 +110,14 @@ def run_single_experiment(dataset_name, method, data, fuzzy_labels, crisp_labels
         
         X_aug_torch = torch.FloatTensor(X_resampled)
         fuzzy_aug_torch = torch.FloatTensor(fuzzy_resampled)
-        
         aug_data = Data(x=X_aug_torch, edge_index=torch.empty((2, 0), dtype=torch.long))
         
         gnn_model = VanillaGNN(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
                               config['num_layers'], config['dropout'])
         
-        gnn_model.fit(aug_data, fuzzy_aug_torch,
-                     torch.ones(len(X_resampled), dtype=torch.bool), None,
-                     config['n_epochs'], config['lr'], config['weight_decay'],
+        gnn_model.fit(aug_data, fuzzy_aug_torch, torch.ones(len(X_resampled), dtype=torch.bool),
+                     None, config['n_epochs'], config['lr'], config['weight_decay'],
                      config['patience'], device, verbose=False)
-        
         fuzzy_pred, crisp_pred = gnn_model.predict(data, device)
     
     # ========================================================================
@@ -200,6 +125,7 @@ def run_single_experiment(dataset_name, method, data, fuzzy_labels, crisp_labels
     # ========================================================================
     
     elif method == 'graphsmote':
+        # 5. GraphSMOTE
         model = GraphSMOTE(embedding_dim=config['hidden_dim'],
                           num_gnn_layers=config['num_layers'],
                           alpha=config['alpha'],
@@ -210,25 +136,46 @@ def run_single_experiment(dataset_name, method, data, fuzzy_labels, crisp_labels
         model.fit(data, crisp_labels, train_mask, val_mask,
                  config['n_epochs'], config['lr'], config['weight_decay'],
                  config['patience'], verbose)
-        
+        fuzzy_pred, crisp_pred = model.predict(data, device)
+    
+    elif method == 'gatsmote':
+        # 6. GATSMOTE
+        model = GATSMOTE(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
+                        config['num_layers'], config['dropout'])
+        model.fit(data, crisp_labels, train_mask, val_mask, config['n_epochs'],
+                 config['lr'], config['weight_decay'], config['patience'], device, verbose)
+        fuzzy_pred, crisp_pred = model.predict(data, device)
+    
+    elif method == 'graphsr':
+        # 7. GraphSR
+        model = GraphSR(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
+                       config['num_layers'], config['dropout'])
+        model.fit(data, crisp_labels, train_mask, val_mask, config['n_epochs'],
+                 config['lr'], config['weight_decay'], config['patience'], device, verbose)
         fuzzy_pred, crisp_pred = model.predict(data, device)
     
     elif method == 'imgagn':
+        # 8. ImGAGN
         model = ImGAGN(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
                       config['num_layers'], config['dropout'])
-        
         model.fit(data, fuzzy_labels, train_mask, val_mask, config['n_epochs'],
                  config['lr'], config['weight_decay'], config['patience'], device, verbose)
-        
+        fuzzy_pred, crisp_pred = model.predict(data, device)
+    
+    elif method == 'graphmixup':
+        # 9. GraphMixup
+        model = GraphMixup(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
+                          config['num_layers'], config['dropout'])
+        model.fit(data, fuzzy_labels, train_mask, val_mask, config['n_epochs'],
+                 config['lr'], config['weight_decay'], config['patience'], device, verbose)
         fuzzy_pred, crisp_pred = model.predict(data, device)
     
     elif method == 'graphens':
+        # 10. GraphENS
         model = GraphENS(data.x.shape[1], config['hidden_dim'], fuzzy_labels.shape[1],
                         config['num_layers'], config['dropout'], n_models=3)
-        
         model.fit(data, fuzzy_labels, train_mask, val_mask, config['n_epochs'],
                  config['lr'], config['weight_decay'], config['patience'], device, verbose)
-        
         fuzzy_pred, crisp_pred = model.predict(data, device)
     
     # ========================================================================
@@ -236,6 +183,7 @@ def run_single_experiment(dataset_name, method, data, fuzzy_labels, crisp_labels
     # ========================================================================
     
     elif method == 'fuzzy_graphsmote':
+        # 11. Fuzzy-GraphSMOTE (OURS)
         model = FuzzyGraphSMOTE(embedding_dim=config['hidden_dim'],
                                num_gnn_layers=config['num_layers'],
                                alpha=config['alpha'],
@@ -250,13 +198,12 @@ def run_single_experiment(dataset_name, method, data, fuzzy_labels, crisp_labels
                                                config['n_pre_epochs'], config['n_joint_epochs'],
                                                config['lr'], config['weight_decay'],
                                                config['patience'], verbose)
-        
         fuzzy_pred, crisp_pred = model.predict(data)
     
     else:
         raise ValueError(f"Unknown method: {method}")
     
-    # Evaluate on test set
+    # Evaluate
     fuzzy_pred_test = fuzzy_pred[test_mask]
     fuzzy_true_test = fuzzy_labels[test_mask]
     crisp_true_test = crisp_labels[test_mask]
@@ -264,7 +211,7 @@ def run_single_experiment(dataset_name, method, data, fuzzy_labels, crisp_labels
     metrics, cm = FuzzyMetrics.evaluate(fuzzy_pred_test, fuzzy_true_test,
                                        crisp_true_test, verbose=verbose)
     
-    # Add G-Mean
+    # G-Mean
     crisp_pred_test = crisp_pred[test_mask]
     gmean = geometric_mean_score(crisp_true_test.cpu().numpy(),
                                 crisp_pred_test.cpu().numpy(),
@@ -278,10 +225,22 @@ def run_single_experiment(dataset_name, method, data, fuzzy_labels, crisp_labels
 
 
 def run_all_experiments(datasets=['cora'],
-                       methods=['vanilla_gnn', 'class_balanced', 'graphsmote', 'fuzzy_graphsmote'],
-                       n_runs=5, device='cuda' if torch.cuda.is_available() else 'cpu',
+                       methods=None,  # Will use default 11 methods
+                       n_runs=5,
+                       device='cuda' if torch.cuda.is_available() else 'cpu',
                        save_dir='./results'):
     """Run all experiments with multiple runs."""
+    
+    # Default: 11 selected baselines
+    if methods is None:
+        methods = [
+            # Sampling-based (4)
+            'smote', 'adasyn', 'borderline_smote', 'fuzzy_smote',
+            # Graph-based (6)
+            'graphsmote', 'gatsmote', 'graphsr', 'imgagn', 'graphmixup', 'graphens',
+            # Ours (1)
+            'fuzzy_graphsmote'
+        ]
     
     os.makedirs(save_dir, exist_ok=True)
     
@@ -296,10 +255,10 @@ def run_all_experiments(datasets=['cora'],
         'n_epochs': 200,
         'n_pre_epochs': 50,
         'n_joint_epochs': 150,
-        'alpha': 1.5,
+        'alpha': 1.0,
         'theta': 0.7,
         'theta_neighbor': 0.5,
-        'k_neighbors': 8,
+        'k_neighbors': 5,
         'lambda_edge': 0.1
     }
     
@@ -316,13 +275,13 @@ def run_all_experiments(datasets=['cora'],
         else:
             raise ValueError(f"Unknown dataset: {dataset_name}")
         
-        # Results for this dataset
+        # Results storage
         config_results = {method: [] for method in methods}
         
         for run in range(n_runs):
             print(f"\n--- Run {run+1}/{n_runs} ---")
             
-            # Create train/val/test split
+            # Create split
             train_mask, val_mask, test_mask = create_train_val_test_split(
                 data.num_nodes, train_ratio=0.6, val_ratio=0.2, test_ratio=0.2, seed=42 + run
             )
@@ -341,7 +300,7 @@ def run_all_experiments(datasets=['cora'],
                     import traceback
                     traceback.print_exc()
         
-        # Compute mean and std
+        # Compute statistics
         summary = {}
         for method, results_list in config_results.items():
             if len(results_list) == 0:
@@ -357,7 +316,7 @@ def run_all_experiments(datasets=['cora'],
         
         all_results[dataset_name] = summary
         
-        # Print comparison table
+        # Print results
         print(f"\n{'='*80}")
         print(f"Summary for {dataset_name}")
         print(f"{'='*80}")
@@ -372,12 +331,11 @@ def run_all_experiments(datasets=['cora'],
         
         print_comparison_table(comparison_dict)
         
-        # Print with std
+        # Detailed results
         print("\nDetailed Results (Mean ± Std):")
         for method, stats in summary.items():
             print(f"\n{method}:")
-            key_metrics = ['accuracy', 'balanced_accuracy', 'macro_f1', 'gmean']
-            for metric in key_metrics:
+            for metric in ['accuracy', 'balanced_accuracy', 'macro_f1', 'gmean']:
                 mean_key = f"{metric}_mean"
                 std_key = f"{metric}_std"
                 if mean_key in stats:
@@ -396,17 +354,16 @@ def run_all_experiments(datasets=['cora'],
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Run Fuzzy-GraphSMOTE experiments')
-    parser.add_argument('--datasets', nargs='+', default=['cora'], 
-                        choices=['cora'])
+    parser = argparse.ArgumentParser(description='Fuzzy-GraphSMOTE - 11 Selected Baselines')
+    parser.add_argument('--datasets', nargs='+', default=['cora'], choices=['cora'])
     parser.add_argument('--methods', nargs='+', 
-                        default=['vanilla_gnn', 'gcn',                                    # GNN
-                                 'class_balanced', 'focal_loss',                          # Loss
-                                 'rus', 'smote', 'adasyn', 'borderline_smote', 'fuzzy_smote',  # Sampling
-                                 'graphsmote', 'imgagn',                      # Graph
-                                 'fuzzy_graphsmote'                                       # OURS
-                    ],
-                        help='Methods to compare')
+                        default=[
+                            'smote', 'adasyn', 'borderline_smote', 'fuzzy_smote',
+                            'graphsmote', 'gatsmote', 'graphsr', 'imgagn', 
+                            'graphmixup', 'graphens',
+                            'fuzzy_graphsmote'
+                        ],
+                        help='Methods to compare (11 selected baselines)')
     parser.add_argument('--n_runs', type=int, default=5)
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--save_dir', type=str, default='./results')
@@ -414,15 +371,32 @@ def main():
     args = parser.parse_args()
     
     print("="*80)
-    print("FUZZY-GRAPHSMOTE EXPERIMENTS - COMPLETE VERSION")
+    print("FUZZY-GRAPHSMOTE - 11 SELECTED BASELINES")
     print("="*80)
+    print("\nMethods:")
+    print("  Sampling-based (4):")
+    print("    1. SMOTE")
+    print("    2. ADASYN")
+    print("    3. Borderline-SMOTE")
+    print("    4. Fuzzy-SMOTE")
+    print("  Graph-based (6):")
+    print("    5. GraphSMOTE")
+    print("    6. GATSMOTE")
+    print("    7. GraphSR")
+    print("    8. ImGAGN")
+    print("    9. GraphMixup")
+    print("    10. GraphENS")
+    print("  Our method (1):")
+    print("    11. Fuzzy-GraphSMOTE")
+    print("\n" + "="*80)
     print(f"Datasets: {args.datasets}")
-    print(f"Methods: {args.methods}")
-    print(f"Runs per config: {args.n_runs}")
+    print(f"Runs: {args.n_runs}")
     print(f"Device: {args.device}")
+    print(f"Estimated time: ~{len(args.methods) * args.n_runs * 2:.0f} minutes")
     print("="*80)
     
-    results = run_all_experiments(args.datasets, args.methods, args.n_runs, args.device, args.save_dir)
+    results = run_all_experiments(args.datasets, args.methods, args.n_runs, 
+                                  args.device, args.save_dir)
     
     print("\n✓ All experiments completed!")
 

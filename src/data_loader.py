@@ -1,6 +1,3 @@
-"""
-Dataset loaders for Cora and MUSAE GitHub.
-"""
 
 import torch
 import numpy as np

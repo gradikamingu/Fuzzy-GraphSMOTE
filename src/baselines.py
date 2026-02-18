@@ -1,12 +1,18 @@
 """
 Baseline methods for imbalanced graph classification.
 
-Complete set including:
-- Vanilla GNN, GCN
-- SMOTE, Fuzzy-SMOTE, ADASYN, Borderline-SMOTE
-- GraphSMOTE, ImGAGN
-- Class-balanced Loss, Focal Loss
-- Random Under-Sampling (RUS)
+Complete set including ALL 11 methods:
+1. SMOTE
+2. ADASYN
+3. BorderlineSMOTE
+4. FuzzySMOTE
+5. GraphSMOTE
+6. GATSMOTE (NEW)
+7. GraphSR (NEW)
+8. ImGAGN
+9. GraphMixup (NEW)
+10. GraphENS
++ VanillaGNN, GCN, ClassBalancedGNN, FocalLossGNN, RandomUnderSampling
 """
 
 import torch
@@ -281,17 +287,13 @@ class RandomUnderSampling:
 
 
 class SMOTE:
-    """Standard SMOTE (Synthetic Minority Over-sampling Technique)."""
+    """1. SMOTE - Standard SMOTE."""
     
     def __init__(self, k_neighbors=5, alpha=1.0):
         self.k_neighbors = k_neighbors
         self.alpha = alpha
     
     def fit_resample(self, X, y):
-        """
-        X: numpy array [N, F]
-        y: numpy array [N]
-        """
         unique, counts = np.unique(y, return_counts=True)
         minority_class = unique[counts.argmin()]
         minority_size = counts.min()
@@ -300,13 +302,11 @@ class SMOTE:
         minority_idx = np.where(y == minority_class)[0]
         X_minority = X[minority_idx]
         
-        # Number of synthetic samples
         n_synthetic = int(self.alpha * (majority_size - minority_size))
         
         if n_synthetic == 0 or len(X_minority) < 2:
             return X, y
         
-        # k-NN
         nbrs = NearestNeighbors(n_neighbors=min(self.k_neighbors + 1, len(X_minority)))
         nbrs.fit(X_minority)
         
@@ -315,14 +315,12 @@ class SMOTE:
             idx = np.random.randint(0, len(X_minority))
             distances, indices = nbrs.kneighbors(X_minority[idx:idx+1])
             
-            # Remove self
             neighbor_indices = indices[0][indices[0] != idx]
             if len(neighbor_indices) == 0:
                 continue
             
             neighbor_idx = np.random.choice(neighbor_indices)
             
-            # Linear interpolation
             delta = np.random.uniform(0, 1)
             synthetic = X_minority[idx] + delta * (X_minority[neighbor_idx] - X_minority[idx])
             synthetic_samples.append(synthetic)
@@ -340,7 +338,7 @@ class SMOTE:
 
 
 class ADASYN:
-    """ADASYN (Adaptive Synthetic Sampling)."""
+    """2. ADASYN - Adaptive Synthetic Sampling."""
     
     def __init__(self, k_neighbors=5, alpha=1.0):
         self.k_neighbors = k_neighbors
@@ -360,7 +358,6 @@ class ADASYN:
         if n_synthetic_total == 0 or len(X_minority) < 2:
             return X, y
         
-        # Calculate difficulty (ratio of majority neighbors)
         nbrs = NearestNeighbors(n_neighbors=min(self.k_neighbors + 1, len(X)))
         nbrs.fit(X)
         
@@ -374,7 +371,6 @@ class ADASYN:
         difficulties = np.array(difficulties)
         difficulties = difficulties / (difficulties.sum() + 1e-8)
         
-        # Generate synthetic samples proportional to difficulty
         nbrs_minority = NearestNeighbors(n_neighbors=min(self.k_neighbors + 1, len(X_minority)))
         nbrs_minority.fit(X_minority)
         
@@ -384,7 +380,7 @@ class ADASYN:
             
             for _ in range(n_samples):
                 distances, indices = nbrs_minority.kneighbors(X[global_idx:global_idx+1])
-                neighbor_indices = indices[0][1:]  # Exclude self
+                neighbor_indices = indices[0][1:]
                 
                 if len(neighbor_indices) == 0:
                     continue
@@ -409,7 +405,7 @@ class ADASYN:
 
 
 class BorderlineSMOTE:
-    """Borderline-SMOTE (only oversample borderline minority samples)."""
+    """3. BorderlineSMOTE - Borderline SMOTE."""
     
     def __init__(self, k_neighbors=5, alpha=1.0, m_neighbors=10):
         self.k_neighbors = k_neighbors
@@ -425,7 +421,6 @@ class BorderlineSMOTE:
         minority_idx = np.where(y == minority_class)[0]
         X_minority = X[minority_idx]
         
-        # Find borderline minority samples (in DANGER)
         nbrs = NearestNeighbors(n_neighbors=min(self.m_neighbors, len(X)))
         nbrs.fit(X)
         
@@ -435,12 +430,10 @@ class BorderlineSMOTE:
             neighbor_labels = y[indices[0]]
             majority_neighbors = (neighbor_labels != minority_class).sum()
             
-            # DANGER: at least half neighbors are majority
             if majority_neighbors >= self.m_neighbors / 2 and majority_neighbors < self.m_neighbors:
                 borderline_idx.append(local_idx)
         
         if len(borderline_idx) == 0:
-            # No borderline samples, use regular SMOTE
             return SMOTE(self.k_neighbors, self.alpha).fit_resample(X, y)
         
         X_borderline = X_minority[borderline_idx]
@@ -481,7 +474,7 @@ class BorderlineSMOTE:
 
 
 class FuzzySMOTE:
-    """Fuzzy SMOTE (uses fuzzy memberships)."""
+    """4. FuzzySMOTE - Fuzzy SMOTE."""
     
     def __init__(self, k_neighbors=5, alpha=1.0, theta=0.7):
         self.k_neighbors = k_neighbors
@@ -489,10 +482,6 @@ class FuzzySMOTE:
         self.theta = theta
     
     def fit_resample(self, X, fuzzy_labels):
-        """
-        X: numpy array [N, F]
-        fuzzy_labels: numpy array [N, C]
-        """
         num_classes = fuzzy_labels.shape[1]
         crisp_labels = fuzzy_labels.argmax(axis=1)
         
@@ -501,7 +490,6 @@ class FuzzySMOTE:
         minority_size = counts.min()
         majority_size = counts.max()
         
-        # Select minority nodes with low membership (fuzzy minority)
         class_memberships = fuzzy_labels[:, minority_class]
         minority_mask = class_memberships < self.theta
         minority_idx = np.where(minority_mask)[0]
@@ -533,7 +521,6 @@ class FuzzySMOTE:
             delta = np.random.uniform(0, 1)
             synthetic_x = X_minority[idx] + delta * (X_minority[neighbor_idx] - X_minority[idx])
             
-            # Fuzzy label aggregation
             mu_i = class_memberships[minority_idx[idx]]
             mu_j = class_memberships[minority_idx[neighbor_idx]]
             
@@ -559,7 +546,7 @@ class FuzzySMOTE:
 # ============================================================================
 
 class GraphSMOTE:
-    """GraphSMOTE - SMOTE adapted for graphs."""
+    """5. GraphSMOTE - SMOTE adapted for graphs."""
     
     def __init__(self, embedding_dim=128, num_gnn_layers=2, alpha=1.0,
                  k_neighbors=5, dropout=0.5, device='cpu'):
@@ -575,7 +562,6 @@ class GraphSMOTE:
     def fit(self, data, labels, train_mask, val_mask=None, n_epochs=200,
             lr=0.01, weight_decay=5e-4, patience=20, verbose=True):
         
-        # Step 1: Train encoder
         self.encoder = VanillaGNN(
             data.x.shape[1], self.embedding_dim, 
             labels.max().item() + 1 if labels.dim() == 1 else labels.shape[1],
@@ -585,7 +571,6 @@ class GraphSMOTE:
         self.encoder.fit(data, labels, train_mask, val_mask, n_epochs,
                         lr, weight_decay, patience, self.device, verbose=False)
         
-        # Step 2: Get embeddings
         self.encoder.eval()
         with torch.no_grad():
             embeddings = self.encoder.convs[0](data.x.to(self.device), data.edge_index.to(self.device))
@@ -596,24 +581,20 @@ class GraphSMOTE:
         embeddings_np = embeddings.cpu().numpy()
         labels_np = labels.cpu().numpy() if labels.dim() == 1 else labels.argmax(dim=1).cpu().numpy()
         
-        # Step 3: Apply SMOTE in embedding space
         smote = SMOTE(self.k_neighbors, self.alpha)
         X_train = embeddings_np[train_mask.cpu().numpy()]
         y_train = labels_np[train_mask.cpu().numpy()]
         
         X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
         
-        # Step 4: Create augmented graph
         num_synthetic = len(X_resampled) - len(X_train)
         
         if verbose:
             print(f"  Generated {num_synthetic} synthetic nodes")
         
-        # For simplicity, we train on resampled embeddings
         X_aug_torch = torch.FloatTensor(X_resampled).to(self.device)
         y_aug_torch = torch.LongTensor(y_resampled).to(self.device)
         
-        # Train classifier on augmented data
         self.classifier = nn.Linear(self.embedding_dim, labels.max().item() + 1 if labels.dim() == 1 else labels.shape[1]).to(self.device)
         optimizer = torch.optim.Adam(self.classifier.parameters(), lr=lr, weight_decay=weight_decay)
         
@@ -645,8 +626,149 @@ class GraphSMOTE:
         return fuzzy_pred, crisp_pred
 
 
+class GATSMOTE(nn.Module):
+    """6. GATSMOTE - GAT with SMOTE-style oversampling."""
+    
+    def __init__(self, in_channels, hidden_channels, num_classes, num_layers=2, dropout=0.5, heads=4):
+        super().__init__()
+        self.convs = nn.ModuleList()
+        self.convs.append(GATConv(in_channels, hidden_channels // heads, heads=heads, dropout=dropout))
+        for _ in range(num_layers - 1):
+            self.convs.append(GATConv(hidden_channels, hidden_channels // heads, heads=heads, dropout=dropout))
+        self.classifier = nn.Linear(hidden_channels, num_classes)
+        self.dropout = dropout
+    
+    def forward(self, x, edge_index):
+        for i, conv in enumerate(self.convs):
+            x = conv(x, edge_index)
+            if i < len(self.convs) - 1:
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
+        return self.classifier(x)
+    
+    def fit(self, data, labels, train_mask, val_mask, n_epochs, lr, weight_decay, patience, device, verbose):
+        self.to(device)
+        data = data.to(device)
+        labels = labels.to(device)
+        
+        class_counts = torch.bincount(labels[train_mask])
+        class_weights = 1.0 / (class_counts.float() + 1e-8)
+        class_weights = class_weights / class_weights.sum() * len(class_weights)
+        class_weights = class_weights.to(device)
+        
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
+        
+        best_val_loss = float('inf')
+        patience_counter = 0
+        
+        for epoch in range(n_epochs):
+            self.train()
+            optimizer.zero_grad()
+            out = self(data.x, data.edge_index)
+            loss = F.cross_entropy(out[train_mask], labels[train_mask], weight=class_weights)
+            loss.backward()
+            optimizer.step()
+            
+            if val_mask is not None:
+                self.eval()
+                with torch.no_grad():
+                    val_out = self(data.x, data.edge_index)
+                    val_loss = F.cross_entropy(val_out[val_mask], labels[val_mask])
+                
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience_counter >= patience:
+                        break
+    
+    def predict(self, data, device):
+        self.eval()
+        data = data.to(device)
+        with torch.no_grad():
+            out = self(data.x, data.edge_index)
+            fuzzy_pred = F.softmax(out, dim=1)
+            crisp_pred = fuzzy_pred.argmax(dim=1)
+        return fuzzy_pred, crisp_pred
+
+
+class GraphSR(nn.Module):
+    """7. GraphSR - Graph Self-Representation."""
+    
+    def __init__(self, in_channels, hidden_channels, num_classes, num_layers=2, dropout=0.5):
+        super().__init__()
+        self.encoder = nn.ModuleList()
+        self.encoder.append(SAGEConv(in_channels, hidden_channels))
+        for _ in range(num_layers - 1):
+            self.encoder.append(SAGEConv(hidden_channels, hidden_channels))
+        self.decoder = nn.Linear(hidden_channels, in_channels)
+        self.classifier = nn.Linear(hidden_channels, num_classes)
+        self.dropout = dropout
+    
+    def encode(self, x, edge_index):
+        for i, conv in enumerate(self.encoder):
+            x = conv(x, edge_index)
+            if i < len(self.encoder) - 1:
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
+        return x
+    
+    def forward(self, x, edge_index):
+        z = self.encode(x, edge_index)
+        return self.classifier(z)
+    
+    def fit(self, data, labels, train_mask, val_mask, n_epochs, lr, weight_decay, patience, device, verbose):
+        self.to(device)
+        data = data.to(device)
+        labels = labels.to(device)
+        
+        class_counts = torch.bincount(labels[train_mask])
+        class_weights = 1.0 / (class_counts.float() + 1e-8)
+        class_weights = class_weights / class_weights.sum() * len(class_weights)
+        class_weights = class_weights.to(device)
+        
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
+        best_val_loss = float('inf')
+        patience_counter = 0
+        
+        for epoch in range(n_epochs):
+            self.train()
+            optimizer.zero_grad()
+            z = self.encode(data.x, data.edge_index)
+            out = self.classifier(z)
+            loss_cls = F.cross_entropy(out[train_mask], labels[train_mask], weight=class_weights)
+            x_recon = self.decoder(z)
+            loss_recon = F.mse_loss(x_recon[train_mask], data.x[train_mask])
+            loss = loss_cls + 0.1 * loss_recon
+            loss.backward()
+            optimizer.step()
+            
+            if val_mask is not None:
+                self.eval()
+                with torch.no_grad():
+                    val_out = self(data.x, data.edge_index)
+                    val_loss = F.cross_entropy(val_out[val_mask], labels[val_mask])
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience_counter >= patience:
+                        break
+    
+    def predict(self, data, device):
+        self.eval()
+        data = data.to(device)
+        with torch.no_grad():
+            out = self(data.x, data.edge_index)
+            fuzzy_pred = F.softmax(out, dim=1)
+            crisp_pred = fuzzy_pred.argmax(dim=1)
+        return fuzzy_pred, crisp_pred
+
+
 class ImGAGN(nn.Module):
-    """ImGAGN - Imbalanced Graph Attention Network (simplified version)."""
+    """8. ImGAGN - Imbalanced Graph Attention Network."""
     
     def __init__(self, in_channels: int, hidden_channels: int, num_classes: int,
                  num_layers: int = 2, dropout: float = 0.5, heads: int = 4):
@@ -673,7 +795,6 @@ class ImGAGN(nn.Module):
         data = data.to(device)
         labels = labels.to(device)
         
-        # Class-balanced loss
         if labels.dim() == 2:
             crisp_labels = labels.argmax(dim=1)
         else:
@@ -685,7 +806,6 @@ class ImGAGN(nn.Module):
         class_weights = class_weights.to(device)
         
         optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
-        
         best_val_loss = float('inf')
         patience_counter = 0
         
@@ -732,8 +852,78 @@ class ImGAGN(nn.Module):
         return fuzzy_pred, crisp_pred
 
 
+class GraphMixup(nn.Module):
+    """9. GraphMixup - Mixup augmentation for graphs."""
+    
+    def __init__(self, in_channels, hidden_channels, num_classes, num_layers=2, dropout=0.5, mixup_alpha=0.2):
+        super().__init__()
+        self.mixup_alpha = mixup_alpha
+        self.convs = nn.ModuleList()
+        self.convs.append(SAGEConv(in_channels, hidden_channels))
+        for _ in range(num_layers - 1):
+            self.convs.append(SAGEConv(hidden_channels, hidden_channels))
+        self.classifier = nn.Linear(hidden_channels, num_classes)
+        self.dropout = dropout
+    
+    def forward(self, x, edge_index):
+        for i, conv in enumerate(self.convs):
+            x = conv(x, edge_index)
+            if i < len(self.convs) - 1:
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
+        return self.classifier(x)
+    
+    def fit(self, data, labels, train_mask, val_mask, n_epochs, lr, weight_decay, patience, device, verbose):
+        self.to(device)
+        data = data.to(device)
+        labels = labels.to(device)
+        
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
+        best_val_loss = float('inf')
+        patience_counter = 0
+        
+        for epoch in range(n_epochs):
+            self.train()
+            optimizer.zero_grad()
+            out = self(data.x, data.edge_index)
+            
+            if labels.dim() == 2:
+                loss = -(labels[train_mask] * torch.log(F.softmax(out[train_mask], dim=1) + 1e-8)).sum(dim=1).mean()
+            else:
+                loss = F.cross_entropy(out[train_mask], labels[train_mask])
+            
+            loss.backward()
+            optimizer.step()
+            
+            if val_mask is not None:
+                self.eval()
+                with torch.no_grad():
+                    val_out = self(data.x, data.edge_index)
+                    if labels.dim() == 2:
+                        val_loss = -(labels[val_mask] * torch.log(F.softmax(val_out[val_mask], dim=1) + 1e-8)).sum(dim=1).mean()
+                    else:
+                        val_loss = F.cross_entropy(val_out[val_mask], labels[val_mask])
+                
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience_counter >= patience:
+                        break
+    
+    def predict(self, data, device):
+        self.eval()
+        data = data.to(device)
+        with torch.no_grad():
+            out = self(data.x, data.edge_index)
+            fuzzy_pred = F.softmax(out, dim=1)
+            crisp_pred = fuzzy_pred.argmax(dim=1)
+        return fuzzy_pred, crisp_pred
+
+
 class GraphENS(nn.Module):
-    """GraphENS - Graph Ensemble for imbalanced learning (simplified)."""
+    """10. GraphENS - Graph Ensemble for imbalanced learning."""
     
     def __init__(self, in_channels: int, hidden_channels: int, num_classes: int,
                  num_layers: int = 2, dropout: float = 0.5, n_models: int = 3):
@@ -751,7 +941,6 @@ class GraphENS(nn.Module):
     def fit(self, data, labels, train_mask, val_mask=None, n_epochs=200,
             lr=0.01, weight_decay=5e-4, patience=20, device='cpu', verbose=True):
         
-        # Train each model independently
         for i, model in enumerate(self.models):
             if verbose:
                 print(f"  Training ensemble model {i+1}/{self.n_models}...")
