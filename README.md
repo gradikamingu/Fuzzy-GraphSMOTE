@@ -86,8 +86,8 @@ If you find this code useful for your research, please cite:
 @article{fuzzy_graphsmote_2025,
   title={Fuzzy-GraphSMOTE: A Fuzzy Graph-based Approach for 
          Imbalanced Node Classification with Label Uncertainty},
-  author={Votre Nom},
-  journal={Votre Journal},
+  author={Gradi L. Kamingu, Pierre K. Kafunda, Elie N. Mbangu},
+  journal={The journal},
   year={2025}
 }
 ```
