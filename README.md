@@ -88,6 +88,6 @@ If you find this code useful for your research, please cite:
          Imbalanced Node Classification with Label Uncertainty},
   author={Gradi L. Kamingu, Pierre K. Kafunda, Elie N. Mbangu},
   journal={The journal},
-  year={2025}
+  year={2026}
 }
 ```
